@@ -3,8 +3,6 @@
 
 **预约前请确保您已拥有可用的 BW2026 门票，否则无法进行活动预约**
 
----
-
 <div>
   <p>
     <!-- GitHub Downloads -->
@@ -14,10 +12,6 @@
     <!-- GitHub Release Version -->
     <a href="https://github.com/Starsbon/bws_ticket/releases">
       <img src="https://img.shields.io/github/v/release/Starsbon/bws_ticket" alt="GitHub release (with filter)">
-    </a>
-    <!-- GitHub Issues -->
-    <a href="https://github.com/Starsbon/bws_ticket/issues">
-      <img src="https://img.shields.io/github/issues/Starsbon/bws_ticket" alt="GitHub issues">
     </a>
     <!-- GitHub Stars -->
     <a href="https://github.com/Starsbon/bws_ticket/stargazers">
