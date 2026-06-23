@@ -32,3 +32,5 @@ Pipfile
 
 # pyinstaller
 *.spec
+
+docs/
