@@ -6,7 +6,7 @@ from core.api import BilibiliAPI
 from login.qrcode import QRCodeLogin
 from ui.menu import InteractiveMenu
 
-VERSION = "1.5.0"
+VERSION = "1.9.0"
 
 
 class UserInterface:
@@ -23,8 +23,7 @@ class UserInterface:
 ██████╔╝╚███╔███╔╝███████║       ██║   ██║╚██████╗██║  ██╗███████╗   ██║   
 ╚═════╝  ╚══╝╚══╝ ╚══════╝       ╚═╝   ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
         """)
-        Logger.info(f'当前程序版本：{VERSION} | 本工具在 Starsbon/bws_ticket 开源，欢迎 Star！')
-        Logger.info(f'不出意外这是本届 BW 2025 最后一版更新，我们 2026 有缘再会喵\n')
+        Logger.info(f'当前程序版本：{VERSION} | 本工具已在 Github 开源，欢迎前往 Star！')
 
     
     @staticmethod
