@@ -1,5 +1,5 @@
 # 哔哩哔哩 BWS（BW乐园）活动预约工具
-> 没票用不了，只要叔叔不改风控就能用，理解万岁。我们明年 BW 2026 有缘再见！
+> 预约前请确保您已拥有可用的 BW2026 门票，否则无法进行活动预约
 
 ### 版本说明
 - 支持扫码登录
@@ -8,7 +8,7 @@
 - 支持二次付费项目显示（如签售）
 
 ### 下载链接
-**点击右侧 Releases 或 [这个链接 https://github.com/Starsbon/bws_ticket/releases](https://github.com/Starsbon/bws_ticket/releases) 前往下载**
+**点击右侧 Releases 或这个链接 [https://github.com/Starsbon/bws_ticket/releases](https://github.com/Starsbon/bws_ticket/releases) 前往下载**
 
 ------
 
@@ -22,4 +22,4 @@
 ### 版权及程序声明
 **本工具仅供技术学习，不提供也未进行任何绕过、试图绕过、入侵哔哩哔哩服务器与其服务的任何功能。**
 
-**若您为哔哩哔哩或上海宽娱数码科技有限公司的版权（或授权）方，请在 Github Issues 留言，我们会尽快处理。**
+**若您为哔哩哔哩及其实体/关联公司的受权委托方，请发送邮件至 starsbon@duck.com ，会尽快处理您的请求**
