@@ -4,11 +4,15 @@
 """
 import os
 import sys
+import warnings
 
 # 解决 Windows 终端编码问题
 if sys.platform == 'win32':
     os.system('chcp 65001 >nul 2>&1')
     os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# 屏蔽 blessed 库的终端能力警告
+warnings.filterwarnings('ignore', message='.*terminal capability.*')
 
 import inquirer
 from utils.logger import Logger

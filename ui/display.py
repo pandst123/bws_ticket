@@ -23,7 +23,8 @@ class UserInterface:
 ██████╔╝╚███╔███╔╝███████║       ██║   ██║╚██████╗██║  ██╗███████╗   ██║   
 ╚═════╝  ╚══╝╚══╝ ╚══════╝       ╚═╝   ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
         """)
-        Logger.info(f'当前程序版本：{VERSION} | 本工具已在 Github 开源，欢迎前往 Star！')
+        Logger.info(f'BWS Ticket | 当前程序版本：{VERSION} | 本工具已在 Github 开源，欢迎前往 Star！')
+        Logger.info(f'BW 乐园入口开放前无法预约！请等待 BW 乐园开放并及时关注项目开源页面！')
 
     
     @staticmethod

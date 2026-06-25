@@ -68,15 +68,12 @@ class ReservationData:
                 ticket_info['ticket']
             )
         
-        # 显示表格
-        with console.capture() as capture:
-            console.print(table)
-        Logger.info(f"\n{capture.get()}")
+        # 直接打印表格
+        console.print()
+        console.print(table)
     
     def display_activities(self) -> None:
         """显示活动信息"""
-        Logger.info('')
-        
         # 加载配置
         config = ConfigManager.load_config()
         hide_ended = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
@@ -114,15 +111,13 @@ class ReservationData:
                     start_time_str
                 )
         
-        # 显示表格
-        with console.capture() as capture:
-            console.print(table)
+        # 直接打印表格
+        console.print()
+        console.print(table)
+        console.print()
         
-        result_info = f"\n{capture.get()}\n"
         if hide_ended and filtered_count > 0:
-            result_info += f"\n已屏蔽 {filtered_count} 个已结束预约或已预约的活动\n"
-        
-        Logger.info(result_info)
+            console.print(f"已屏蔽 {filtered_count} 个已结束预约或已预约的活动")
     
     def display_activities_for_date(self, selected_date: str) -> None:
         """显示指定日期的活动信息"""
@@ -149,9 +144,9 @@ class ReservationData:
             ticket_info['ticket']
         )
         
-        with console.capture() as capture:
-            console.print(ticket_table)
-        Logger.info(f"\n票务信息：\n{capture.get()}\n")
+        console.print()
+        Logger.info("票务信息：")
+        console.print(ticket_table)
         
         # 准备活动信息表格数据
         activities = self.raw_data['reserve_list'][selected_date]
@@ -199,14 +194,13 @@ class ReservationData:
                 data[3]
             )
         
-        with console.capture() as capture:
-            console.print(activity_table)
+        console.print()
+        Logger.info("活动信息：")
+        console.print(activity_table)
+        console.print()
         
-        result_info = f"活动信息：\n{capture.get()}\n"
         if hide_ended and filtered_count > 0:
-            result_info += f"\n已屏蔽 {filtered_count} 个已结束预约或已预约的活动\n"
-        
-        Logger.info(result_info)
+            console.print(f"已屏蔽 {filtered_count} 个已结束预约或已预约的活动")
     
     def get_ticket_for_activity(self, activity_id: int) -> Optional[str]:
         """根据活动ID获取对应的票号"""
@@ -272,10 +266,10 @@ class ReservationData:
                     status
                 )
         
-        # 显示表格
-        with console.capture() as capture:
-            console.print(table)
-        Logger.info(f"\n{capture.get()}\n")
+        # 直接打印表格
+        console.print()
+        console.print(table)
+        console.print()
         
         # 显示统计信息
         total_count = sum(len(activities) for activities in reserve_list.values())

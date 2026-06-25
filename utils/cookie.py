@@ -51,12 +51,12 @@ class CookieCache:
             # 检查缓存是否过期（7天）
             cache_age = int(time.time()) - cache_data.get('timestamp', 0)
             if cache_age > 7 * 24 * 3600:  # 7天过期
-                Logger.warning("Cookie缓存已过期，需要重新输入")
+                Logger.warning("Cookie 缓存已过期，需要重新输入")
                 return None
             
             return cache_data.get('cookie')
         except Exception as e:
-            Logger.error(f"读取Cookie缓存失败: {e}")
+            Logger.error(f"读取 Cookie 缓存失败: {e}")
             return None
     
     @classmethod
@@ -66,4 +66,4 @@ class CookieCache:
             if os.path.exists(cls.CACHE_FILE):
                 os.remove(cls.CACHE_FILE)
         except Exception as e:
-            Logger.error(f"清除Cookie缓存失败: {e}")
+            Logger.error(f"清除 Cookie 缓存失败: {e}")
