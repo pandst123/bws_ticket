@@ -10,10 +10,10 @@ class ConfigManager:
     
     CONFIG_FILE = "bws_config.json"
     DEFAULT_CONFIG = {
-        "开票前延迟设置": {
+        "pre_delay": {
             "start_delay_ms": 0  # 开票前延时（毫秒）
         },
-        "开抢中延迟设置": {
+        "loop_delay": {
             "loop_delay_ms": 0  # 开抢中延时（毫秒）
         },
         "retry_intervals": {
@@ -23,7 +23,7 @@ class ConfigManager:
         },
         "max_retries": 1000,
         "request_timeout": 10,
-        "活动过滤设置": {
+        "activity_filter": {
             "hide_ended_reservations": False  # 屏蔽已结束预约活动（state: 3）
         }
     }
@@ -62,14 +62,14 @@ class ConfigManager:
             Tuple[bool, str]: (是否合法, 错误信息)
         """
         # 验证开票前延迟设置
-        if '开票前延迟设置' in config:
-            delay = config['开票前延迟设置'].get('start_delay_ms', 0)
+        if 'pre_delay' in config:
+            delay = config['pre_delay'].get('start_delay_ms', 0)
             if not isinstance(delay, (int, float)):
                 return False, "开票前延迟必须是数字"
         
         # 验证开抢中延迟设置
-        if '开抢中延迟设置' in config:
-            delay = config['开抢中延迟设置'].get('loop_delay_ms', 0)
+        if 'loop_delay' in config:
+            delay = config['loop_delay'].get('loop_delay_ms', 0)
             if not isinstance(delay, (int, float)):
                 return False, "开抢中延迟必须是数字"
             if delay < 0:
@@ -101,8 +101,8 @@ class ConfigManager:
                 return False, "请求超时时间必须大于0"
         
         # 验证活动过滤设置
-        if '活动过滤设置' in config:
-            filter_setting = config['活动过滤设置']
+        if 'activity_filter' in config:
+            filter_setting = config['activity_filter']
             if 'hide_ended_reservations' in filter_setting:
                 if not isinstance(filter_setting['hide_ended_reservations'], bool):
                     return False, "屏蔽已结束活动设置必须是布尔值"

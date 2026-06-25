@@ -57,9 +57,9 @@ def main():
         while True:
             time_status = "NTP时间" if TimeUtils._use_ntp else "本地时间"
             config = ConfigManager.load_config()
-            delay_ms = config.get('开票前延迟设置', {}).get('start_delay_ms', 0)
-            loop_delay_ms = config.get('开抢中延迟设置', {}).get('loop_delay_ms', 50)
-            hide_ended = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
+            delay_ms = config.get('pre_delay', {}).get('start_delay_ms', 0)
+            loop_delay_ms = config.get('loop_delay', {}).get('loop_delay_ms', 50)
+            hide_ended = config.get('activity_filter', {}).get('hide_ended_reservations', False)
             filter_status = "已启用" if hide_ended else "已禁用"
             main_options = [
                 "查看所有预约活动",
@@ -100,7 +100,7 @@ def main():
                 input("\n按回车键返回主菜单...")
             elif selected_index == 5:  # 设置开抢前延迟
                 try:
-                    current_delay = config.get('开票前延迟设置', {}).get('start_delay_ms', 0)
+                    current_delay = config.get('pre_delay', {}).get('start_delay_ms', 0)
                     print(f"\n当前延时设置: {current_delay} 毫秒")
                     print("说明: 本设置影响开票前的动作，正数为延迟（如 100 表示开票后 100ms 开抢），负数为提前（如 -100 表示提前 100ms 开抢）\n")
                     
@@ -110,7 +110,7 @@ def main():
                         Logger.info("未修改延时设置")
                     else:
                         new_delay = int(delay_input)
-                        config['开票前延迟设置']['start_delay_ms'] = new_delay
+                        config['pre_delay']['start_delay_ms'] = new_delay
                         ConfigManager.save_config(config)
                         if new_delay >= 0:
                             Logger.info(f"延时设置已更新为: {new_delay} 毫秒（开票后延迟）")
@@ -125,7 +125,7 @@ def main():
                 input("\n按回车键返回主菜单...")
             elif selected_index == 6:  # 设置开抢中延迟
                 try:
-                    current_delay = config.get('开抢中延迟设置', {}).get('loop_delay_ms', 50)
+                    current_delay = config.get('loop_delay', {}).get('loop_delay_ms', 50)
                     print(f"\n当前开抢中延迟设置: {current_delay} 毫秒")
                     print("说明: 本设置影响开抢过程中每次请求之间的延迟时间，设置为0表示不进行延迟，只允许非负数\n")
                     
@@ -138,9 +138,9 @@ def main():
                         if new_delay < 0:
                             Logger.warning("开抢中延迟不能为负数，请输入大于等于0的数值")
                         else:
-                            if '开抢中延迟设置' not in config:
-                                config['开抢中延迟设置'] = {}
-                            config['开抢中延迟设置']['loop_delay_ms'] = new_delay
+                            if 'loop_delay' not in config:
+                                config['loop_delay'] = {}
+                            config['loop_delay']['loop_delay_ms'] = new_delay
                             ConfigManager.save_config(config)
                             if new_delay == 0:
                                 Logger.info(f"开抢中延迟已设置为: {new_delay} 毫秒（无延迟）")
@@ -155,7 +155,7 @@ def main():
                 input("\n按回车键返回主菜单...")
             elif selected_index == 7:  # 设置屏蔽已结束活动
                 try:
-                    current_hide = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
+                    current_hide = config.get('activity_filter', {}).get('hide_ended_reservations', False)
                     status_text = "已启用" if current_hide else "已禁用"
                     print(f"\n当前设置: 屏蔽已结束预约活动 - {status_text}")
                     print("说明: 启用后将为您隐藏不可预约的活动（含已预约成功的活动）")
@@ -171,11 +171,11 @@ def main():
                     if filter_selected == -1:
                         pass  # 用户取消
                     elif filter_selected == 0:
-                        config['活动过滤设置']['hide_ended_reservations'] = False
+                        config['activity_filter']['hide_ended_reservations'] = False
                         ConfigManager.save_config(config)
                         Logger.info("已禁用活动过滤，将显示所有活动")
                     elif filter_selected == 1:
-                        config['活动过滤设置']['hide_ended_reservations'] = True
+                        config['activity_filter']['hide_ended_reservations'] = True
                         ConfigManager.save_config(config)
                         Logger.info("已启用活动过滤，将屏蔽已结束预约和已预约的活动")
                         

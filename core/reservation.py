@@ -76,7 +76,7 @@ class ReservationData:
         """显示活动信息"""
         # 加载配置
         config = ConfigManager.load_config()
-        hide_ended = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
+        hide_ended = config.get('activity_filter', {}).get('hide_ended_reservations', False)
         
         # 创建表格
         console = Console()
@@ -127,7 +127,7 @@ class ReservationData:
         
         # 加载配置
         config = ConfigManager.load_config()
-        hide_ended = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
+        hide_ended = config.get('activity_filter', {}).get('hide_ended_reservations', False)
         
         ticket_info = self.raw_data['user_ticket_info'][selected_date]
         
@@ -360,7 +360,7 @@ class ReservationBot:
                     Logger.warning(f"自动 NTP 校时失败: {e}，将使用当前时间模式")
             
             # 计算开票前延迟设置（支持负数提前抢票）
-            delay_ms = self.config.get('开票前延迟设置', {}).get('start_delay_ms', 0)
+            delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
             target_time = reserve_time + (delay_ms / 1000.0)  # 目标开抢时间
             
             # 等待到达目标开抢时间
@@ -402,7 +402,7 @@ class ReservationBot:
         """开始预约循环"""
         # 获取开抢中延迟设置
         config = ConfigManager.load_config()
-        loop_delay_ms = config.get('开抢中延迟设置', {}).get('loop_delay_ms', 50)
+        loop_delay_ms = config.get('loop_delay', {}).get('loop_delay_ms', 50)
         loop_delay_seconds = loop_delay_ms / 1000.0
         
         while True:

@@ -68,7 +68,7 @@ class InteractiveMenu:
         
         # 加载配置
         config = ConfigManager.load_config()
-        hide_ended = config.get('活动过滤设置', {}).get('hide_ended_reservations', False)
+        hide_ended = config.get('activity_filter', {}).get('hide_ended_reservations', False)
         
         # 过滤活动
         filtered_activities = []
