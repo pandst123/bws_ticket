@@ -84,7 +84,8 @@ class BilibiliAPI:
         """获取我的预约信息"""
         url = "https://api.bilibili.com/x/activity/bws/online/park/myreserve"
         params = {
-            "csrf": self.csrf_token
+            "csrf": self.csrf_token,
+            "year": "202601"
         }
         
         try:
