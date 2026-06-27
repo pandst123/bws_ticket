@@ -64,6 +64,7 @@ def main():
             main_options = [
                 "查看所有预约活动",
                 "查看指定日期活动",
+                "查看我的票种",
                 "查看我的预约",
                 "开始预约抢票",
                 f"设置程序校时 (当前: {time_status})",
@@ -75,7 +76,7 @@ def main():
             
             selected_index = InteractiveMenu.show_menu("BWS Ticket - 主菜单", main_options)
             
-            if selected_index == -1 or selected_index == 8:  # ESC或退出
+            if selected_index == -1 or selected_index == 9:  # ESC或退出
                 Logger.info("程序退出")
                 break
             elif selected_index == 0:  # 查看所有预约活动
@@ -85,7 +86,13 @@ def main():
                 reservation_data.display_ticket_info()
                 reservation_data.display_activities()
                 input("\n按回车键返回主菜单...")
-            elif selected_index == 2:  # 查看我的预约
+            elif selected_index == 2:  # 查看我的票种
+                print("\n" + "="*60)
+                print("查看我的票种")
+                print("="*60)
+                reservation_data.display_ticket_info()
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 3:  # 查看我的预约
                 print("\n" + "="*60)
                 print("查看我的预约")
                 print("="*60)
@@ -98,7 +105,7 @@ def main():
                 except Exception as e:
                     Logger.error(f"获取预约信息时出错: {e}")
                 input("\n按回车键返回主菜单...")
-            elif selected_index == 5:  # 设置开抢前延迟
+            elif selected_index == 6:  # 设置开抢前延迟
                 try:
                     current_delay = config.get('pre_delay', {}).get('start_delay_ms', 0)
                     print(f"\n当前延时设置: {current_delay} 毫秒")
@@ -123,7 +130,7 @@ def main():
                     pass
                 
                 input("\n按回车键返回主菜单...")
-            elif selected_index == 6:  # 设置开抢中延迟
+            elif selected_index == 7:  # 设置开抢中延迟
                 try:
                     current_delay = config.get('loop_delay', {}).get('loop_delay_ms', 50)
                     print(f"\n当前开抢中延迟设置: {current_delay} 毫秒")
@@ -153,7 +160,7 @@ def main():
                     pass
                 
                 input("\n按回车键返回主菜单...")
-            elif selected_index == 7:  # 设置屏蔽已结束活动
+            elif selected_index == 8:  # 设置屏蔽已结束活动
                 try:
                     current_hide = config.get('activity_filter', {}).get('hide_ended_reservations', False)
                     status_text = "已启用" if current_hide else "已禁用"
@@ -192,7 +199,7 @@ def main():
                     print("="*60)
                     reservation_data.display_activities_for_date(selected_date)
                     input("\n按回车键返回主菜单...")
-            elif selected_index == 3:  # 开始预约抢票
+            elif selected_index == 4:  # 开始预约抢票
                 # 选择日期
                 selected_date = InteractiveMenu.show_date_menu(reservation_data)
                 if not selected_date:
@@ -236,7 +243,7 @@ def main():
                 bot.wait_and_reserve(selected_activity_id, reservation_mode)
                 
                 input("\n预约结束，按回车键返回主菜单...")
-            elif selected_index == 4:  # 设置程序校时
+            elif selected_index == 5:  # 设置程序校时
                 time_options = [
                     "使用本地时间",
                     "使用 Aliyun NTP 时间"
