@@ -30,12 +30,14 @@ class BilibiliAPI:
         session.headers.update({"User-Agent": self.USER_AGENT})
         return session
     
-    def get_reservation_info(self, reserve_dates: str = "20250711,20250712,20240713") -> Optional[Dict]:
+    def get_reservation_info(self, reserve_dates: str = "20260710,20260711,20260712") -> Optional[Dict]:
         """获取预约信息"""
         url = f"{self.BASE_URL}/info"
         params = {
             "csrf": self.csrf_token,
-            "reserve_date": reserve_dates
+            "reserve_date": reserve_dates,
+            "reserve_type": 0,
+            "year": "202601"
         }
         
         try:
