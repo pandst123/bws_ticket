@@ -275,9 +275,13 @@ def main():
                 Logger.info("按 Ctrl+C 可以中断抢票\n")
                 
                 bot = ReservationBot(api_client, reservation_data)
-                bot.wait_and_reserve(selected_activity_id, reservation_mode)
+                result = bot.wait_and_reserve(selected_activity_id, reservation_mode)
                 
-                input("\n预约结束，按回车键返回主菜单...")
+                # 检查是否是 412 错误
+                if result and result.get("code") == 412:
+                    input("\n按任意键返回主菜单...")
+                else:
+                    input("\n预约结束，按回车键返回主菜单...")
             elif selected_index == 5:  # 设置程序校时
                 time_options = [
                     "使用本地时间",

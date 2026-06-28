@@ -2,6 +2,8 @@
 import datetime
 import time
 import ntplib
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple, Set
 from rich.console import Console
 from rich.table import Table
@@ -284,12 +286,15 @@ class ReservationBot:
         self.reservation_data = reservation_data
         self.config = ConfigManager.load_config()
     
-    def wait_and_reserve(self, activity_id: int, mode: str = "scheduled") -> None:
+    def wait_and_reserve(self, activity_id: int, mode: str = "scheduled") -> Optional[Dict]:
         """等待并进行预约
         
         Args:
             activity_id: 活动ID
             mode: 预约模式 ('scheduled' 准时开抢, 'immediate' 直接开抢)
+            
+        Returns:
+            预约结果字典，失败时返回 None
         """
         activity_info = self.reservation_data.activity_mapping[activity_id]
         activity_title, start_time, reserve_time = activity_info
@@ -297,17 +302,21 @@ class ReservationBot:
         ticket_number = self.reservation_data.get_ticket_for_activity(activity_id)
         if not ticket_number:
             Logger.error(f"无法找到活动 {activity_id} 对应的票号")
-            return
+            return None
         
         if mode == "immediate":
             Logger.info("当前为立即开抢模式，即将开始抢票！")
-            self._start_reservation_loop(ticket_number, activity_id, activity_title)
+            return self._start_reservation_loop(ticket_number, activity_id, activity_title)
         else:
             Logger.info("当前为准时开抢模式，等待预约时间...")
-            self._wait_for_reservation_time(ticket_number, activity_id, activity_title, reserve_time)
+            return self._wait_for_reservation_time(ticket_number, activity_id, activity_title, reserve_time)
     
-    def _wait_for_reservation_time(self, ticket_number: str, activity_id: int, activity_title: str, reserve_time: int) -> None:
-        """等待预约时间到达"""
+    def _wait_for_reservation_time(self, ticket_number: str, activity_id: int, activity_title: str, reserve_time: int) -> Optional[Dict]:
+        """等待预约时间到达
+        
+        Returns:
+            预约结果字典，失败时返回 None
+        """
         last_status_time = 0
         auto_sync_done = False
         
@@ -375,13 +384,7 @@ class ReservationBot:
                 elif (current_time > last_status_time + 3):
                     last_status_time = current_time
                     reserve_time_str = TimeUtils.timestamp_to_datetime(reserve_time)
-                    time_source = "NTP 时间" if TimeUtils._use_ntp else "本地时间"
-                    if delay_ms > 0:
-                        Logger.info(f'等待开票，当前预约活动：{activity_title} | 开票时间：{reserve_time_str} | 延迟：{delay_ms}ms | 剩余：{remaining_seconds:.1f}秒 ({time_source})')
-                    elif delay_ms < 0:
-                        Logger.info(f'等待开票，当前预约活动：{activity_title} | 开票时间：{reserve_time_str} | 提前：{-delay_ms}ms | 剩余：{remaining_seconds:.1f}秒 ({time_source})')
-                    else:
-                        Logger.info(f'等待开票，当前预约活动：{activity_title} | 开票时间：{reserve_time_str} | 剩余：{remaining_seconds:.1f}秒 ({time_source})')
+                    Logger.info(f'等待开票，距离开票时间 {remaining_seconds:.1f} 秒（{reserve_time_str}）')
                 time.sleep(0.1)
                 continue
             
@@ -394,55 +397,141 @@ class ReservationBot:
                 Logger.info("开票时间已到，开始抢票...")
             
             # 开始抢票
-            self._start_reservation_loop(ticket_number, activity_id, activity_title)
-            break
+            return self._start_reservation_loop(ticket_number, activity_id, activity_title)
     
 
-    def _start_reservation_loop(self, ticket_number: str, activity_id: int, activity_title: str) -> None:
-        """开始预约循环"""
-        # 获取开抢中延迟设置
+    def _start_reservation_loop(self, ticket_number: str, activity_id: int, activity_title: str) -> Optional[Dict]:
+        """开始预约循环（支持多线程并发）
+        
+        Returns:
+            预约结果字典，失败时返回 None
+        """
+        # 获取配置
         config = ConfigManager.load_config()
         loop_delay_ms = config.get('loop_delay', {}).get('loop_delay_ms', 50)
         loop_delay_seconds = loop_delay_ms / 1000.0
+        thread_count = config.get('thread_count', 1)
         
-        while True:
+        # 线程安全的共享状态
+        success_flag = threading.Event()
+        stop_flag = threading.Event()
+        result_lock = threading.Lock()
+        success_count = 0
+        error_count = 0
+        final_result = None  # 保存最终结果
+        
+        def reservation_worker(thread_id: int) -> Optional[Dict]:
+            """单个线程的预约工作函数"""
+            nonlocal success_count, error_count, final_result
+            
+            while not stop_flag.is_set():
+                try:
+                    # 如果已经有线程成功，停止当前线程
+                    if success_flag.is_set():
+                        break
+                    
+                    result = self.api_client.make_reservation(ticket_number, activity_id)
+                    
+                    code = result.get("code")
+                    need_sleep = False
+                    sleep_time = 0
+                    
+                    with result_lock:
+                        if code == 0:
+                            Logger.info(f"\033[32m[线程{thread_id}] 预约成功！\033[0m")
+                            success_count += 1
+                            final_result = result
+                            success_flag.set()  # 通知所有线程停止
+                            return result
+                        elif code == 75637:
+                            Logger.info(f"[线程{thread_id}] [75637] 尚未开放，请等待预约开始")
+                        elif code == -702:
+                            Logger.warning(f"[线程{thread_id}] [702] 请求频率太快")
+                            error_count += 1
+                        elif code == -1:
+                            Logger.error(f"[线程{thread_id}] [-1] 网络错误，继续重试")
+                            error_count += 1
+                        elif code == 412:
+                            Logger.warning(f"[线程{thread_id}] {result.get('message', '[412] IP 或账号被限流，建议更换 IP 再试')}")
+                            error_count += 1
+                            final_result = result
+                            stop_flag.set()  # 停止所有线程
+                            return result
+                        elif code == 429:
+                            Logger.warning(f"[线程{thread_id}] [429] 限流，等待稍后重试")
+                            error_count += 1
+                            need_sleep = True
+                            sleep_time = 0.5  # 等待0.5秒后重试
+                        elif code == 75574:
+                            Logger.error(f"[线程{thread_id}] [75574] 预约已被抢空")
+                            final_result = result
+                            stop_flag.set()  # 通知所有线程停止
+                            return result
+                        elif code == 76674:
+                            Logger.error(f"[线程{thread_id}] [76674] 预约已达上限")
+                            final_result = result
+                            stop_flag.set()  # 通知所有线程停止
+                            return result
+                        elif code == 76650:
+                            Logger.warning(f"[线程{thread_id}] [76650] 操作频繁")
+                            error_count += 1
+                            need_sleep = True
+                            sleep_time = 0.1  # 等待0.1秒后重试
+                        elif code == 76651:
+                            Logger.warning(f"[线程{thread_id}] [76651] 预约通道拥挤或请求频率过快")
+                            error_count += 1
+                            need_sleep = True
+                            sleep_time = 0.5  # 等待0.5秒后重试
+                        else:
+                            Logger.warning(f"[线程{thread_id}] 出金了，是新的未知状态，请自行判断：{result}")
+                            error_count += 1
+                    
+                    # 在锁外执行 sleep，避免阻塞其他线程
+                    if need_sleep and sleep_time > 0:
+                        time.sleep(sleep_time)
+                    
+                    # 使用配置的开抢中延迟
+                    if loop_delay_seconds > 0:
+                        time.sleep(loop_delay_seconds)
+                        
+                except Exception as e:
+                    Logger.error(f"[线程{thread_id}] 预约过程中发生错误：{e}")
+                    error_count += 1
+                    time.sleep(1)
+            
+            return None
+        
+        # 根据线程数决定执行方式
+        if thread_count <= 1:
+            # 单线程模式（原有逻辑）
+            Logger.info("单线程模式开始抢票...")
+            final_result = reservation_worker(1)
+        else:
+            # 多线程模式
+            Logger.info(f"多线程模式开始抢票，线程数：{thread_count}")
+            Logger.info("提示：多线程会并发发送请求，可能触发风控，请谨慎使用")
+            
             try:
-                result = self.api_client.make_reservation(ticket_number, activity_id)
-                
-                code = result.get("code")
-                if code == 0:
-                    Logger.info("\033[32m预约成功！\033[0m")
-                    break
-                elif code == 75637:
-                    Logger.info("[75637] 尚未开放，请等待预约开始")
-                elif code == -702:
-                    Logger.warning("[702] 请求频率太快")
-                elif code == -1:
-                    Logger.error("[-1] 网络错误，继续重试")
-                elif code == 412:
-                    Logger.warning("[412] 风控，请在数分钟后再试")
-                    time.sleep(180)  # 等待3分钟后重试
-                elif code == 429:
-                    Logger.warning("[429] 限流，等待稍后重试")
-                    time.sleep(0.5)  # 等待5秒后重试
-                elif code == 75574:
-                    Logger.error("[75574] 预约已被抢空")
-                    break
-                elif code == 76674:
-                    Logger.error("[76674] 预约已达上限")
-                    break
-                elif code == 76650:
-                    Logger.warning("[76650] 操作频繁")
-                    time.sleep(0.1)  # 等待1秒后重试
-                else:
-                    Logger.warning(f"出金了，是新的未知状态，请自行判断：{result}")
-                
-                # 使用配置的开抢中延迟
-                if loop_delay_seconds > 0:
-                    time.sleep(loop_delay_seconds)
+                with ThreadPoolExecutor(max_workers=thread_count) as executor:
+                    # 提交所有线程任务
+                    futures = [executor.submit(reservation_worker, i+1) for i in range(thread_count)]
+                    
+                    # 等待第一个完成的线程
+                    for future in as_completed(futures):
+                        try:
+                            result = future.result()
+                            # 一旦有结果，停止其他线程
+                            stop_flag.set()
+                            break
+                        except Exception as e:
+                            Logger.error(f"线程执行异常：{e}")
+                            continue
             except KeyboardInterrupt:
                 Logger.info("用户中断抢票")
-                break
-            except Exception as e:
-                Logger.error(f"预约过程中发生错误：{e}")
-                time.sleep(1)
+                stop_flag.set()
+        
+        # 显示最终结果
+        if success_flag.is_set():
+            Logger.info(f"抢票完成！成功次数：{success_count}")
+        else:
+            Logger.info(f"抢票结束，未成功。错误次数：{error_count}")
