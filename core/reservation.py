@@ -320,84 +320,88 @@ class ReservationBot:
         last_status_time = 0
         auto_sync_done = False
         
-        while True:
-            current_time = int(TimeUtils.get_current_time())
-            
-            # 开抢前5分钟自动校时
-            if not auto_sync_done and current_time >= reserve_time - 300:  # 5分钟 = 300秒
-                auto_sync_done = True
-                Logger.info("开抢前 5 分钟，正在进行自动 NTP 校时...")
+        try:
+            while True:
+                current_time = int(TimeUtils.get_current_time())
                 
-                # 记录校时前的时间（如果已启用 NTP 则使用当前 NTP 时间，否则使用本机时间）
-                time_before = TimeUtils.get_current_time()
-                local_time_before = time.time()  # 始终记录本机时间用于显示真实的本机与NTP差异
-                
-                # 执行NTP校时
-                try:
-                    ntp_client = ntplib.NTPClient()
-                    response = ntp_client.request('ntp.aliyun.com', version=3)
-                    ntp_time = response.tx_time
+                # 开抢前5分钟自动校时
+                if not auto_sync_done and current_time >= reserve_time - 300:  # 5分钟 = 300秒
+                    auto_sync_done = True
+                    Logger.info("开抢前 5 分钟，正在进行自动 NTP 校时...")
                     
-                    # 计算本机时间与NTP服务器的真实时间差（用于显示）
-                    real_time_diff = ntp_time - local_time_before
+                    # 记录校时前的时间（如果已启用 NTP 则使用当前 NTP 时间，否则使用本机时间）
+                    time_before = TimeUtils.get_current_time()
+                    local_time_before = time.time()  # 始终记录本机时间用于显示真实的本机与NTP差异
                     
-                    # 计算新的NTP偏移（基于本机时间）
-                    new_ntp_offset = ntp_time - local_time_before
-                    
-                    # 显示本机时间与NTP服务器的真实时间差
-                    if abs(real_time_diff) < 1:
-                        Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (时间同步良好)")
-                    else:
-                        Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (建议检查系统时间)")
-                    
-                    # 如果用户未开启NTP模式，根据时间差决定是否临时应用校时
-                    if not TimeUtils._use_ntp:
-                        if abs(real_time_diff) > 0.7:
-                            TimeUtils._ntp_offset = new_ntp_offset
-                            TimeUtils._use_ntp = True
-                            Logger.info(f"本机时间偏差较大({real_time_diff:.3f}秒)，已临时启用 NTP 校时模式以确保抢票时间准确")
-                        else:
-                            Logger.info(f"本机时间偏差较小({real_time_diff:.3f}秒)，继续使用本机时间")
-                    else:
-                        # 更新现有的NTP偏移
-                        old_offset = TimeUtils._ntp_offset
-                        TimeUtils._ntp_offset = new_ntp_offset
-                        offset_change = new_ntp_offset - old_offset
-                        Logger.info(f"已更新 NTP 时间偏移 (偏移变化: {offset_change:.3f}秒)")
+                    # 执行NTP校时
+                    try:
+                        ntp_client = ntplib.NTPClient()
+                        response = ntp_client.request('ntp.aliyun.com', version=3)
+                        ntp_time = response.tx_time
                         
-                except Exception as e:
-                    Logger.warning(f"自动 NTP 校时失败: {e}，将使用当前时间模式")
-            
-            # 计算开票前延迟设置（支持负数提前抢票）
-            delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
-            target_time = reserve_time + (delay_ms / 1000.0)  # 目标开抢时间
-            
-            # 等待到达目标开抢时间
-            if current_time < target_time:
-                remaining_seconds = target_time - current_time
+                        # 计算本机时间与NTP服务器的真实时间差（用于显示）
+                        real_time_diff = ntp_time - local_time_before
+                        
+                        # 计算新的NTP偏移（基于本机时间）
+                        new_ntp_offset = ntp_time - local_time_before
+                        
+                        # 显示本机时间与NTP服务器的真实时间差
+                        if abs(real_time_diff) < 1:
+                            Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (时间同步良好)")
+                        else:
+                            Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (建议检查系统时间)")
+                        
+                        # 如果用户未开启NTP模式，根据时间差决定是否临时应用校时
+                        if not TimeUtils._use_ntp:
+                            if abs(real_time_diff) > 0.7:
+                                TimeUtils._ntp_offset = new_ntp_offset
+                                TimeUtils._use_ntp = True
+                                Logger.info(f"本机时间偏差较大({real_time_diff:.3f}秒)，已临时启用 NTP 校时模式以确保抢票时间准确")
+                            else:
+                                Logger.info(f"本机时间偏差较小({real_time_diff:.3f}秒)，继续使用本机时间")
+                        else:
+                            # 更新现有的NTP偏移
+                            old_offset = TimeUtils._ntp_offset
+                            TimeUtils._ntp_offset = new_ntp_offset
+                            offset_change = new_ntp_offset - old_offset
+                            Logger.info(f"已更新 NTP 时间偏移 (偏移变化: {offset_change:.3f}秒)")
+                            
+                    except Exception as e:
+                        Logger.warning(f"自动 NTP 校时失败: {e}，将使用当前时间模式")
                 
-                # 开票前5秒停止输出倒计时，并显示待抢状态提示
-                if remaining_seconds <= 5:
-                    if last_status_time == 0 or current_time > last_status_time + 1:  # 只打印一次或每秒更新一次
+                # 计算开票前延迟设置（支持负数提前抢票）
+                delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
+                target_time = reserve_time + (delay_ms / 1000.0)  # 目标开抢时间
+                
+                # 等待到达目标开抢时间
+                if current_time < target_time:
+                    remaining_seconds = target_time - current_time
+                    
+                    # 开票前5秒停止输出倒计时，并显示待抢状态提示
+                    if remaining_seconds <= 5:
+                        if last_status_time == 0 or current_time > last_status_time + 1:  # 只打印一次或每秒更新一次
+                            last_status_time = current_time
+                            Logger.info("即将开始抢票，进入待抢状态，不再输出倒计时")
+                    elif (current_time > last_status_time + 3):
                         last_status_time = current_time
-                        Logger.info("即将开始抢票，进入待抢状态，不再输出倒计时")
-                elif (current_time > last_status_time + 3):
-                    last_status_time = current_time
-                    reserve_time_str = TimeUtils.timestamp_to_datetime(reserve_time)
-                    Logger.info(f'等待开票，距离开票时间 {remaining_seconds:.1f} 秒（{reserve_time_str}）')
-                time.sleep(0.1)
-                continue
-            
-            # 到达目标时间，开始抢票
-            if delay_ms > 0:
-                Logger.info(f"开票时间已到，延迟 {delay_ms} 毫秒后开始抢票...")
-            elif delay_ms < 0:
-                Logger.info(f"提前 {-delay_ms} 毫秒开始抢票...")
-            else:
-                Logger.info("开票时间已到，开始抢票...")
-            
-            # 开始抢票
-            return self._start_reservation_loop(ticket_number, activity_id, activity_title)
+                        reserve_time_str = TimeUtils.timestamp_to_datetime(reserve_time)
+                        Logger.info(f'等待开票，距离开票时间 {remaining_seconds:.1f} 秒（{reserve_time_str}）')
+                    time.sleep(0.1)
+                    continue
+                
+                # 到达目标时间，开始抢票
+                if delay_ms > 0:
+                    Logger.info(f"开票时间已到，延迟 {delay_ms} 毫秒后开始抢票...")
+                elif delay_ms < 0:
+                    Logger.info(f"提前 {-delay_ms} 毫秒开始抢票...")
+                else:
+                    Logger.info("开票时间已到，开始抢票...")
+                
+                # 开始抢票
+                return self._start_reservation_loop(ticket_number, activity_id, activity_title)
+        except KeyboardInterrupt:
+            Logger.info("用户中断等待")
+            return None
     
 
     def _start_reservation_loop(self, ticket_number: str, activity_id: int, activity_title: str) -> Optional[Dict]:
@@ -505,7 +509,11 @@ class ReservationBot:
         if thread_count <= 1:
             # 单线程模式（原有逻辑）
             Logger.info("单线程模式开始抢票...")
-            final_result = reservation_worker(1)
+            try:
+                final_result = reservation_worker(1)
+            except KeyboardInterrupt:
+                Logger.info("用户中断抢票")
+                stop_flag.set()
         else:
             # 多线程模式
             Logger.info(f"多线程模式开始抢票，线程数：{thread_count}")

@@ -23,7 +23,8 @@ class UserInterface:
 ██████╔╝╚███╔███╔╝███████║       ██║   ██║╚██████╗██║  ██╗███████╗   ██║   
 ╚═════╝  ╚══╝╚══╝ ╚══════╝       ╚═╝   ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   
         """)
-        Logger.info(f'BWS Ticket | 当前程序版本：{VERSION} | 本工具已在 Github 开源，欢迎前往 Star！')
+        Logger.info(f'BWS Ticket | 当前程序版本：{VERSION}')
+        Logger.info(f'本项目在 Starsbon/bws_ticket 开源，欢迎 Star\n')
 
     
     @staticmethod

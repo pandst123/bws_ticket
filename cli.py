@@ -1,7 +1,3 @@
-"""BWS Ticket - 哔哩哔哩 BWS 活动预约工具
-
-本工具仅供技术学习，不提供也未进行任何绕过、试图绕过、入侵哔哩哔哩服务器与其服务的任何功能。
-"""
 import os
 import sys
 import warnings
@@ -304,8 +300,7 @@ def main():
         
     except ValueError as e:
         Logger.error(f"配置错误: {e}")
-    except KeyboardInterrupt:
-        Logger.info("\n用户取消操作")
+        input("按回车键退出...")
     except Exception as e:
         Logger.error(f"程序运行出错: {e}")
         input("按回车键退出...")
