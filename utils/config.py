@@ -25,7 +25,8 @@ class ConfigManager:
         "request_timeout": 10,
         "activity_filter": {
             "hide_ended_reservations": False  # 屏蔽已结束预约活动（state: 3）
-        }
+        },
+        "thread_count": 1  # 并发线程数（默认1）
     }
     
     @classmethod
@@ -106,5 +107,15 @@ class ConfigManager:
             if 'hide_ended_reservations' in filter_setting:
                 if not isinstance(filter_setting['hide_ended_reservations'], bool):
                     return False, "屏蔽已结束活动设置必须是布尔值"
+        
+        # 验证线程数设置
+        if 'thread_count' in config:
+            thread_count = config['thread_count']
+            if not isinstance(thread_count, int):
+                return False, "线程数必须是整数"
+            if thread_count < 1:
+                return False, "线程数不能小于1"
+            if thread_count > 10:
+                return False, "线程数不建议超过10"
         
         return True, ""

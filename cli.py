@@ -61,6 +61,7 @@ def main():
             loop_delay_ms = config.get('loop_delay', {}).get('loop_delay_ms', 50)
             hide_ended = config.get('activity_filter', {}).get('hide_ended_reservations', False)
             filter_status = "已启用" if hide_ended else "已禁用"
+            thread_count = config.get('thread_count', 1)
             main_options = [
                 "查看所有预约活动",
                 "查看指定日期活动",
@@ -70,13 +71,14 @@ def main():
                 f"设置程序校时 (当前: {time_status})",
                 f"设置开抢前延迟 (当前: {delay_ms}毫秒)",
                 f"设置开抢中延迟 (当前: {loop_delay_ms}毫秒)",
+                f"设置并发线程数 (当前: {thread_count}线程)",
                 f"设置屏蔽已结束活动 (当前: {filter_status})",
                 "退出程序"
             ]
             
             selected_index = InteractiveMenu.show_menu("BWS Ticket - 主菜单", main_options)
             
-            if selected_index == -1 or selected_index == 9:  # ESC或退出
+            if selected_index == -1 or selected_index == 10:  # ESC或退出
                 Logger.info("程序退出")
                 break
             elif selected_index == 0:  # 查看所有预约活动
@@ -160,7 +162,43 @@ def main():
                     pass
                 
                 input("\n按回车键返回主菜单...")
-            elif selected_index == 8:  # 设置屏蔽已结束活动
+            elif selected_index == 8:  # 设置并发线程数
+                try:
+                    current_threads = config.get('thread_count', 1)
+                    print(f"\n当前并发线程数设置: {current_threads} 线程")
+                    print("说明: 多线程会并发发送预约请求，可能提高成功率，但也可能触发风控")
+                    print("建议: 初次使用建议保持默认值1，熟悉后再尝试更高线程数")
+                    print("范围: 1-10（推荐1-3）\n")
+                    
+                    thread_input = input(f"请输入新的并发线程数（1-10）: ").strip()
+                    
+                    if thread_input == "":
+                        Logger.info("未修改线程数设置")
+                    else:
+                        new_threads = int(thread_input)
+                        if new_threads < 1:
+                            Logger.warning("线程数不能小于1")
+                        elif new_threads > 10:
+                            Logger.warning("线程数不建议超过10，可能触发风控")
+                            # 仍然允许设置，但给出警告
+                            config['thread_count'] = new_threads
+                            ConfigManager.save_config(config)
+                            Logger.info(f"线程数已设置为: {new_threads}（请注意风控风险）")
+                        else:
+                            config['thread_count'] = new_threads
+                            ConfigManager.save_config(config)
+                            if new_threads == 1:
+                                Logger.info(f"线程数已设置为: {new_threads}（单线程模式）")
+                            else:
+                                Logger.info(f"线程数已设置为: {new_threads}（多线程模式）")
+                            
+                except ValueError:
+                    Logger.warning("请输入有效的数字")
+                except (KeyboardInterrupt, EOFError):
+                    pass
+                
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 9:  # 设置屏蔽已结束活动
                 try:
                     current_hide = config.get('activity_filter', {}).get('hide_ended_reservations', False)
                     status_text = "已启用" if current_hide else "已禁用"
@@ -219,16 +257,14 @@ def main():
                 activity_title = reservation_data.activity_mapping[selected_activity_id][0]
                 mode_text = "准时开抢" if reservation_mode == "scheduled" else "直接开抢"
                 
-                # 使用 inquirer 进行确认
+                # 使用 input 进行确认（支持直接回车）
                 try:
-                    confirm_question = [
-                        inquirer.Confirm('confirm',
-                                       message="确认开始预约？",
-                                       default=False)
-                    ]
-                    confirm_answer = inquirer.prompt(confirm_question)
+                    print(f"\n活动：{activity_title}")
+                    print(f"模式：{mode_text}")
+                    confirm_input = input("确认开始预约？(Y/n): ").strip().lower()
                     
-                    if not confirm_answer or not confirm_answer['confirm']:
+                    if confirm_input == 'n':
+                        Logger.info("已取消预约")
                         continue
                 except (KeyboardInterrupt, EOFError):
                     continue

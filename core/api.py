@@ -59,7 +59,8 @@ class BilibiliAPI:
         data = {
             "ticket_no": ticket_number,
             "csrf": self.csrf_token,
-            "inter_reserve_id": reservation_id
+            "inter_reserve_id": reservation_id,
+            "year": "202601"
         }
         
         # 记录请求发起时间（仅写入文件）
@@ -68,6 +69,13 @@ class BilibiliAPI:
         
         try:
             response = self.session.post(url, data=data, cookies=self.cookies)
+            
+            # 检查 HTTP 412 状态码
+            if response.status_code == 412:
+                error_result = {"code": 412, "message": "[412] IP 或账号被限流，建议更换 IP 再试"}
+                Logger.log_to_file_only(f"HTTP 412: IP 或账号被限流", 'WARNING')
+                return error_result
+            
             response.raise_for_status()
             result = response.json()
             
