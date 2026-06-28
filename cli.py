@@ -166,9 +166,8 @@ def main():
                 try:
                     current_threads = config.get('thread_count', 1)
                     print(f"\n当前并发线程数设置: {current_threads} 线程")
-                    print("说明: 多线程会并发发送预约请求，可能提高成功率，但也可能触发风控")
-                    print("建议: 初次使用建议保持默认值1，熟悉后再尝试更高线程数")
-                    print("范围: 1-10（推荐1-3）\n")
+                    print("多线程会并发发送预约请求，可能提高成功率，但也可能触发风控")
+                    print("不建议修改本参数，速度过快可能导致您被 412 临时限流")
                     
                     thread_input = input(f"请输入新的并发线程数（1-10）: ").strip()
                     
