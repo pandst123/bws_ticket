@@ -555,7 +555,7 @@ class ReservationBot:
                             need_sleep = True
                             sleep_time = 0.1  # 等待0.1秒后重试
                         elif code == 76651:
-                            Logger.warning(f"[线程{thread_id}] [76651] 预约通道拥挤或请求频率过快")
+                            Logger.warning(f"[线程{thread_id}] [76651] 该活动仅限女性预约")
                             error_count += 1
                             need_sleep = True
                             sleep_time = 0.5  # 等待0.5秒后重试
