@@ -101,21 +101,32 @@ class InteractiveMenu:
         for activity in filtered_activities:
             activity_id = activity['reserve_id']
             title = activity['act_title'].replace('\n', '')
-            reserve_time_str = TimeUtils.timestamp_to_datetime(activity['reserve_begin_time'])
+            
+            # 使用有效预约时间
+            effective_reserve_time = reservation_data.get_effective_reserve_time(activity_id, selected_date)
+            reserve_time_str = TimeUtils.timestamp_to_datetime(effective_reserve_time)
             start_time_str = TimeUtils.timestamp_to_datetime(activity['act_begin_time'])
             
-            # 处理活动提示信息
-            if '预约只是签售资格，现场签售需购买up主周边。' in activity['describe_info']:
-                warning = "⚠️ 付费内容"
-            else:
-                warning = "免费活动"
+            # 处理活动类型信息
+            activity_type = ""
+            if reservation_data.is_vip_priority_activity(activity_id):
+                if reservation_data.is_user_vip_for_date(selected_date):
+                    activity_type = "[VIP 优先购] "
+                else:
+                    activity_type = "[VIP 优先购] "
+            
+            if '预约只是签售资格，现场签售需购买UP主周边。' in activity['describe_info']:
+                activity_type += "[需付费] "
+            
+            if not activity_type:
+                activity_type = "普通活动"
             
             table.add_row(
                 str(activity_id),
                 title,
                 reserve_time_str,
                 start_time_str,
-                warning
+                activity_type
             )
         
         with console.capture() as capture:
@@ -133,13 +144,24 @@ class InteractiveMenu:
         for i, activity in enumerate(filtered_activities):
             activity_id = activity['reserve_id']
             title = activity['act_title'].replace('\n', '')
-            reserve_time_str = TimeUtils.timestamp_to_datetime(activity['reserve_begin_time'])
+            
+            # 使用有效预约时间
+            effective_reserve_time = reservation_data.get_effective_reserve_time(activity_id, selected_date)
+            reserve_time_str = TimeUtils.timestamp_to_datetime(effective_reserve_time)
             start_time_str = TimeUtils.timestamp_to_datetime(activity['act_begin_time'])
+            
+            # 处理活动类型信息
+            activity_type = ""
+            if reservation_data.is_vip_priority_activity(activity_id):
+                if reservation_data.is_user_vip_for_date(selected_date):
+                    activity_type = "\033[33m[VIP 优先购] \033[0m"
+                else:
+                    activity_type = "\033[36m[VIP 优先购] \033[0m"
+            
             if '预约只是签售资格，现场签售需购买up主周边。' in activity['describe_info']:
-                warning = "[需付费] "
-            else:
-                warning = ""
-            display_text = f"\033[31m{warning}\033[0m{title} | 预约开始 {reserve_time_str} | 活动时间 {start_time_str}"
+                activity_type += "\033[31m[需付费] \033[0m"
+            
+            display_text = f"{activity_type}{title} | 预约开始 {reserve_time_str} | 活动时间 {start_time_str}"
             options.append(display_text)
             activity_mapping[i] = activity_id
         

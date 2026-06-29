@@ -29,8 +29,8 @@ class ReservationData:
         return {day: self.raw_data['user_ticket_info'][day]['ticket'] 
                 for day in self.ticket_days}
     
-    def _build_activity_mapping(self) -> Dict[int, Tuple[str, int, int]]:
-        """构建活动ID到活动信息的映射"""
+    def _build_activity_mapping(self) -> Dict[int, Tuple[str, int, int, bool, int]]:
+        """构建活动ID到活动信息的映射，包含VIP优先购信息"""
         activity_map = {}
         for day in self.ticket_days:
             for activity in self.raw_data['reserve_list'][day]:
@@ -38,7 +38,10 @@ class ReservationData:
                 title = activity['act_title'].replace('\n', '')
                 start_time = activity['act_begin_time']
                 reserve_time = activity['reserve_begin_time']
-                activity_map[activity_id] = (title, start_time, reserve_time)
+                is_vip_ticket = activity.get('is_vip_ticket', 0) == 1
+                next_reserve = activity.get('next_reserve') or {}
+                next_reserve_time = int(next_reserve.get('reserve_begin_time') or 0)
+                activity_map[activity_id] = (title, start_time, reserve_time, is_vip_ticket, next_reserve_time)
         return activity_map
     
     def _build_reserved_activity_mapping(self) -> Set[int]:
@@ -49,6 +52,41 @@ class ReservationData:
                 for activity in date_activities:
                     reserved_ids.add(activity['reserve_id'])
         return reserved_ids
+    
+    def is_user_vip_for_date(self, date: str) -> bool:
+        """检查用户在指定日期是否为VIP"""
+        if date not in self.raw_data.get('user_ticket_info', {}):
+            return False
+        ticket_info = self.raw_data['user_ticket_info'][date]
+        return bool(ticket_info.get('is_vip', False))
+    
+    def get_effective_reserve_time(self, activity_id: int, date: str) -> int:
+        """获取有效的预约开始时间，根据用户VIP状态决定"""
+        if activity_id not in self.activity_mapping:
+            return 0
+        
+        title, start_time, reserve_time, is_vip_ticket, next_reserve_time = self.activity_mapping[activity_id]
+        
+        # 如果是VIP优先场次，根据用户VIP状态决定时间
+        if is_vip_ticket:
+            if self.is_user_vip_for_date(date):
+                # VIP用户使用VIP时间
+                return reserve_time
+            else:
+                # 非VIP用户使用普通时间（如果有）
+                if next_reserve_time > 0:
+                    return next_reserve_time
+                return reserve_time
+        
+        # 非VIP优先场次，直接返回预约时间
+        return reserve_time
+    
+    def is_vip_priority_activity(self, activity_id: int) -> bool:
+        """检查活动是否为VIP优先购场次"""
+        if activity_id not in self.activity_mapping:
+            return False
+        _, _, _, is_vip_ticket, _ = self.activity_mapping[activity_id]
+        return is_vip_ticket
     
     def display_ticket_info(self) -> None:
         """显示购票信息"""
@@ -99,8 +137,18 @@ class ReservationData:
                     filtered_count += 1
                     continue
                 title = activity['act_title'].replace('\n', '')
-                reserve_time_str = TimeUtils.timestamp_to_datetime(activity['reserve_begin_time'])
+                
+                # 使用新的方法获取有效的预约时间
+                effective_reserve_time = self.get_effective_reserve_time(activity_id, day)
+                reserve_time_str = TimeUtils.timestamp_to_datetime(effective_reserve_time)
                 start_time_str = TimeUtils.timestamp_to_datetime(activity['act_begin_time'])
+                
+                # 检查是否为VIP优先购场次
+                if self.is_vip_priority_activity(activity_id):
+                    if self.is_user_vip_for_date(day):
+                        title = f"[yellow][VIP 优先购] [/yellow]{title}"
+                    else:
+                        title = f"[cyan][VIP 优先购] [/cyan]{title}"
                 
                 # 检查是否为二次付费活动
                 if '预约只是签售资格，现场签售需购买up主周边。' in activity['describe_info']:
@@ -163,8 +211,18 @@ class ReservationData:
                 filtered_count += 1
                 continue
             title = activity['act_title'].replace('\n', '')
-            reserve_time_str = TimeUtils.timestamp_to_datetime(activity['reserve_begin_time'])
+            
+            # 使用新的方法获取有效的预约时间
+            effective_reserve_time = self.get_effective_reserve_time(activity_id, selected_date)
+            reserve_time_str = TimeUtils.timestamp_to_datetime(effective_reserve_time)
             start_time_str = TimeUtils.timestamp_to_datetime(activity['act_begin_time'])
+            
+            # 检查是否为VIP优先购场次
+            if self.is_vip_priority_activity(activity_id):
+                if self.is_user_vip_for_date(selected_date):
+                    title = f"[yellow][VIP 优先购] [/yellow]{title}"
+                else:
+                    title = f"[cyan][VIP 优先购] [/cyan]{title}"
             
             # 检查是否为二次付费活动
             if '预约只是签售资格，现场签售需购买up主周边。' in activity['describe_info']:
@@ -286,23 +344,34 @@ class ReservationBot:
         self.reservation_data = reservation_data
         self.config = ConfigManager.load_config()
     
-    def wait_and_reserve(self, activity_id: int, mode: str = "scheduled") -> Optional[Dict]:
+    def wait_and_reserve(self, activity_id: int, date: str, mode: str = "scheduled") -> Optional[Dict]:
         """等待并进行预约
         
         Args:
             activity_id: 活动ID
+            date: 活动日期
             mode: 预约模式 ('scheduled' 准时开抢, 'immediate' 直接开抢)
             
         Returns:
             预约结果字典，失败时返回 None
         """
         activity_info = self.reservation_data.activity_mapping[activity_id]
-        activity_title, start_time, reserve_time = activity_info
+        activity_title = activity_info[0]
+        
+        # 获取有效的预约时间（根据用户VIP状态）
+        reserve_time = self.reservation_data.get_effective_reserve_time(activity_id, date)
         
         ticket_number = self.reservation_data.get_ticket_for_activity(activity_id)
         if not ticket_number:
             Logger.error(f"无法找到活动 {activity_id} 对应的票号")
             return None
+        
+        # 显示VIP优先购信息
+        if self.reservation_data.is_vip_priority_activity(activity_id):
+            if self.reservation_data.is_user_vip_for_date(date):
+                Logger.info(f"活动 {activity_id} 为 [VIP 优先购] 场次，您是VIP用户，将使用VIP开抢时间")
+            else:
+                Logger.info(f"活动 {activity_id} 为 [VIP 优先购] 场次，您不是VIP用户，将使用普通开抢时间")
         
         if mode == "immediate":
             Logger.info("当前为立即开抢模式，即将开始抢票！")

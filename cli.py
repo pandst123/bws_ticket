@@ -271,7 +271,7 @@ def main():
                 Logger.info("按 Ctrl+C 可以中断抢票\n")
                 
                 bot = ReservationBot(api_client, reservation_data)
-                result = bot.wait_and_reserve(selected_activity_id, reservation_mode)
+                result = bot.wait_and_reserve(selected_activity_id, selected_date, reservation_mode)
                 
                 # 检查是否是 412 错误
                 if result and result.get("code") == 412:
