@@ -3,7 +3,6 @@ import datetime
 import time
 import ntplib
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple, Set
 from rich.console import Console
 from rich.table import Table
@@ -592,25 +591,31 @@ class ReservationBot:
             # 多线程模式
             Logger.info(f"多线程模式开始抢票，线程数：{thread_count}")
             Logger.info("提示：多线程会并发发送请求，可能触发风控，请谨慎使用")
+            Logger.info("按 Ctrl+C 可停止抢票")
             
+            threads = []
             try:
-                with ThreadPoolExecutor(max_workers=thread_count) as executor:
-                    # 提交所有线程任务
-                    futures = [executor.submit(reservation_worker, i+1) for i in range(thread_count)]
+                # 使用守护线程，主线程结束时子线程也会结束
+                for i in range(thread_count):
+                    t = threading.Thread(target=reservation_worker, args=(i+1,), daemon=True)
+                    threads.append(t)
+                    t.start()
+                
+                # 等待所有线程完成，定期检查 stop_flag
+                while not stop_flag.is_set():
+                    # 检查是否所有线程都已结束
+                    alive_threads = [t for t in threads if t.is_alive()]
+                    if not alive_threads:
+                        break
+                    # 短暂等待，避免忙等
+                    time.sleep(0.1)
                     
-                    # 等待第一个完成的线程
-                    for future in as_completed(futures):
-                        try:
-                            result = future.result()
-                            # 一旦有结果，停止其他线程
-                            stop_flag.set()
-                            break
-                        except Exception as e:
-                            Logger.error(f"线程执行异常：{e}")
-                            continue
             except KeyboardInterrupt:
-                Logger.info("用户中断抢票")
+                Logger.info("\n用户中断抢票")
                 stop_flag.set()
+                # 等待线程结束
+                for t in threads:
+                    t.join(timeout=1)
         
         # 显示最终结果
         if success_flag.is_set():
