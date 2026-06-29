@@ -8,8 +8,6 @@ docs/
 *.egg-info/
 *.egg
 *.spec
-
-# Nuitka 编译文件
 *.build/
 *.dist/
 *.onefile-build/

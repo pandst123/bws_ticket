@@ -1,6 +1,7 @@
 """哔哩哔哩 API 客户端模块"""
 import datetime
 import json
+import random
 import requests
 from typing import Dict, Optional
 from utils.logger import Logger
@@ -30,13 +31,18 @@ class BilibiliAPI:
         session.headers.update({"User-Agent": self.USER_AGENT})
         return session
     
-    def get_reservation_info(self, reserve_dates: str = "20260710,20260711,20260712") -> Optional[Dict]:
-        """获取预约信息"""
+    def get_reservation_info(self, reserve_dates: str = "20260710,20260711,20260712", reserve_type: int = 0) -> Optional[Dict]:
+        """获取预约信息
+        
+        Args:
+            reserve_dates: 日期，逗号分隔
+            reserve_type: 预约类型，0=活动，1=商品
+        """
         url = f"{self.BASE_URL}/info"
         params = {
             "csrf": self.csrf_token,
             "reserve_date": reserve_dates,
-            "reserve_type": 0,
+            "reserve_type": reserve_type,
             "year": "202601"
         }
         
@@ -53,6 +59,10 @@ class BilibiliAPI:
             Logger.error(f"网络请求失败: {e}")
             return None
     
+    def get_goods_info(self, reserve_dates: str = "20260710,20260711,20260712") -> Optional[Dict]:
+        """获取商品预约信息"""
+        return self.get_reservation_info(reserve_dates, reserve_type=1)
+    
     def make_reservation(self, ticket_number: str, reservation_id: int) -> Dict:
         """进行预约"""
         url = f"{self.BASE_URL}/do"
@@ -60,33 +70,44 @@ class BilibiliAPI:
             "ticket_no": ticket_number,
             "csrf": self.csrf_token,
             "inter_reserve_id": reservation_id,
-            "year": "202601"
+            "year": "202601",
+            "ts": int(datetime.datetime.now().timestamp() * 1000),
+            "_": random.randint(10000, 99999)
         }
         
-        # 记录请求发起时间（仅写入文件）
-        request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        Logger.log_to_file_only(f"请求发起时间: {request_time} | 请求URL: {url} | 请求数据: {data}")
-        
-        try:
-            response = self.session.post(url, data=data, cookies=self.cookies)
+        while True:
+            # 记录请求发起时间（仅写入文件）
+            request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            Logger.log_to_file_only(f"请求发起时间: {request_time} | 请求URL: {url} | 请求数据: {data}")
             
-            # 检查 HTTP 412 状态码
-            if response.status_code == 412:
-                error_result = {"code": 412, "message": "[412] IP 或账号被限流，建议更换 IP 再试"}
-                Logger.log_to_file_only(f"HTTP 412: IP 或账号被限流", 'WARNING')
+            try:
+                response = self.session.post(url, data=data, cookies=self.cookies)
+                
+                # 检查 HTTP 429 状态码 - 请求限流，立即重试
+                if response.status_code == 429:
+                    Logger.warning("[429] 请求限流，正在重试中...")
+                    # 每次重试更新时间戳和随机数
+                    data["ts"] = int(datetime.datetime.now().timestamp() * 1000)
+                    data["_"] = random.randint(10000, 99999)
+                    continue
+                
+                # 检查 HTTP 412 状态码
+                if response.status_code == 412:
+                    error_result = {"code": 412, "message": "[412] IP 或账号被限流，建议更换 IP 再试"}
+                    Logger.log_to_file_only(f"HTTP 412: IP 或账号被限流", 'WARNING')
+                    return error_result
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # 记录响应正文内容（仅写入文件）
+                Logger.log_to_file_only(f"响应正文内容: {json.dumps(result, ensure_ascii=False)}")
+                
+                return result
+            except requests.RequestException as e:
+                error_result = {"code": -1, "message": f"网络请求失败: {e}"}
+                Logger.log_to_file_only(f"网络请求失败: {e}", 'ERROR')
                 return error_result
-            
-            response.raise_for_status()
-            result = response.json()
-            
-            # 记录响应正文内容（仅写入文件）
-            Logger.log_to_file_only(f"响应正文内容: {json.dumps(result, ensure_ascii=False)}")
-            
-            return result
-        except requests.RequestException as e:
-            error_result = {"code": -1, "message": f"网络请求失败: {e}"}
-            Logger.log_to_file_only(f"网络请求失败: {e}", 'ERROR')
-            return error_result
     
     def get_my_reservations(self) -> Optional[Dict]:
         """获取我的预约信息"""

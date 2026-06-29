@@ -49,6 +49,15 @@ def main():
         # 初始化数据管理器
         reservation_data = ReservationData(reservation_info, my_reservations)
         
+        # 初始化商品数据
+        goods_data = None
+        try:
+            goods_data = api_client.get_goods_info()
+        except Exception as e:
+            Logger.warning(f"获取商品信息失败: {e}，商品抢购功能将不可用")
+        
+        goods_reservation_data = ReservationData(goods_data, my_reservations) if goods_data else None
+        
         # 主菜单循环
         while True:
             time_status = "NTP时间" if TimeUtils._use_ntp else "本地时间"
@@ -59,11 +68,12 @@ def main():
             filter_status = "已启用" if hide_ended else "已禁用"
             thread_count = config.get('thread_count', 1)
             main_options = [
+                "开抢活动参与资格",
+                "开抢商品购买资格" if goods_reservation_data else "开抢商品购买资格 (无商品数据)",
                 "查看所有预约活动",
                 "查看指定日期活动",
                 "查看我的票种",
                 "查看我的预约",
-                "开始预约抢票",
                 f"设置程序校时 (当前: {time_status})",
                 f"设置开抢前延迟 (当前: {delay_ms}毫秒)",
                 f"设置开抢中延迟 (当前: {loop_delay_ms}毫秒)",
@@ -74,165 +84,10 @@ def main():
             
             selected_index = InteractiveMenu.show_menu("BWS Ticket - 主菜单", main_options)
             
-            if selected_index == -1 or selected_index == 10:  # ESC或退出
+            if selected_index == -1 or selected_index == 11:  # ESC或退出
                 Logger.info("程序退出")
                 break
-            elif selected_index == 0:  # 查看所有预约活动
-                print("\n" + "="*60)
-                print("查看所有预约活动")
-                print("="*60)
-                reservation_data.display_ticket_info()
-                reservation_data.display_activities()
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 2:  # 查看我的票种
-                print("\n" + "="*60)
-                print("查看我的票种")
-                print("="*60)
-                reservation_data.display_ticket_info()
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 3:  # 查看我的预约
-                print("\n" + "="*60)
-                print("查看我的预约")
-                print("="*60)
-                try:
-                    my_reservations = api_client.get_my_reservations()
-                    if my_reservations:
-                        ReservationData.display_my_reservations(my_reservations)
-                    else:
-                        Logger.error("获取预约信息失败")
-                except Exception as e:
-                    Logger.error(f"获取预约信息时出错: {e}")
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 6:  # 设置开抢前延迟
-                try:
-                    current_delay = config.get('pre_delay', {}).get('start_delay_ms', 0)
-                    print(f"\n当前延时设置: {current_delay} 毫秒")
-                    print("说明: 本设置影响开票前的动作，正数为延迟（如 100 表示开票后 100ms 开抢），负数为提前（如 -100 表示提前 100ms 开抢）\n")
-                    
-                    delay_input = input(f"请输入新的延时时间（毫秒）: ").strip()
-                    
-                    if delay_input == "":
-                        Logger.info("未修改延时设置")
-                    else:
-                        new_delay = int(delay_input)
-                        config['pre_delay']['start_delay_ms'] = new_delay
-                        ConfigManager.save_config(config)
-                        if new_delay >= 0:
-                            Logger.info(f"延时设置已更新为: {new_delay} 毫秒（开票后延迟）")
-                        else:
-                            Logger.info(f"延时设置已更新为: {new_delay} 毫秒（开票前提前 {abs(new_delay)} 毫秒）")
-                            
-                except ValueError:
-                    Logger.warning("请输入有效的数字")
-                except (KeyboardInterrupt, EOFError):
-                    pass
-                
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 7:  # 设置开抢中延迟
-                try:
-                    current_delay = config.get('loop_delay', {}).get('loop_delay_ms', 50)
-                    print(f"\n当前开抢中延迟设置: {current_delay} 毫秒")
-                    print("说明: 本设置影响开抢过程中每次请求之间的延迟时间，设置为0表示不进行延迟，只允许非负数\n")
-                    
-                    delay_input = input(f"请输入新的开抢中延迟时间（毫秒，>=0）: ").strip()
-                    
-                    if delay_input == "":
-                        Logger.info("未修改开抢中延迟设置")
-                    else:
-                        new_delay = int(delay_input)
-                        if new_delay < 0:
-                            Logger.warning("开抢中延迟不能为负数，请输入大于等于0的数值")
-                        else:
-                            if 'loop_delay' not in config:
-                                config['loop_delay'] = {}
-                            config['loop_delay']['loop_delay_ms'] = new_delay
-                            ConfigManager.save_config(config)
-                            if new_delay == 0:
-                                Logger.info(f"开抢中延迟已设置为: {new_delay} 毫秒（无延迟）")
-                            else:
-                                Logger.info(f"开抢中延迟已设置为: {new_delay} 毫秒")
-                            
-                except ValueError:
-                    Logger.warning("请输入有效的数字")
-                except (KeyboardInterrupt, EOFError):
-                    pass
-                
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 8:  # 设置并发线程数
-                try:
-                    current_threads = config.get('thread_count', 1)
-                    print(f"\n当前并发线程数设置: {current_threads} 线程")
-                    print("多线程会并发发送预约请求，可能提高成功率，但也可能触发风控")
-                    print("不建议修改本参数，速度过快可能导致您被 412 临时限流")
-                    
-                    thread_input = input(f"请输入新的并发线程数（1-10）: ").strip()
-                    
-                    if thread_input == "":
-                        Logger.info("未修改线程数设置")
-                    else:
-                        new_threads = int(thread_input)
-                        if new_threads < 1:
-                            Logger.warning("线程数不能小于1")
-                        elif new_threads > 10:
-                            Logger.warning("线程数不建议超过10，可能触发风控")
-                            # 仍然允许设置，但给出警告
-                            config['thread_count'] = new_threads
-                            ConfigManager.save_config(config)
-                            Logger.info(f"线程数已设置为: {new_threads}（请注意风控风险）")
-                        else:
-                            config['thread_count'] = new_threads
-                            ConfigManager.save_config(config)
-                            if new_threads == 1:
-                                Logger.info(f"线程数已设置为: {new_threads}（单线程模式）")
-                            else:
-                                Logger.info(f"线程数已设置为: {new_threads}（多线程模式）")
-                            
-                except ValueError:
-                    Logger.warning("请输入有效的数字")
-                except (KeyboardInterrupt, EOFError):
-                    pass
-                
-                input("\n按回车键返回主菜单...")
-            elif selected_index == 9:  # 设置屏蔽已结束活动
-                try:
-                    current_hide = config.get('activity_filter', {}).get('hide_ended_reservations', False)
-                    status_text = "已启用" if current_hide else "已禁用"
-                    print(f"\n当前设置: 屏蔽已结束预约活动 - {status_text}")
-                    print("说明: 启用后将为您隐藏不可预约的活动（含已预约成功的活动）")
-                    
-                    filter_options = [
-                        "禁用屏蔽 - 显示所有活动",
-                        "启用屏蔽 - 隐藏已结束预约、已预约的活动"
-                    ]
-                    
-                    current_option = 1 if current_hide else 0
-                    filter_selected = InteractiveMenu.show_menu("活动过滤设置", filter_options, current_option)
-                    
-                    if filter_selected == -1:
-                        pass  # 用户取消
-                    elif filter_selected == 0:
-                        config['activity_filter']['hide_ended_reservations'] = False
-                        ConfigManager.save_config(config)
-                        Logger.info("已禁用活动过滤，将显示所有活动")
-                    elif filter_selected == 1:
-                        config['activity_filter']['hide_ended_reservations'] = True
-                        ConfigManager.save_config(config)
-                        Logger.info("已启用活动过滤，将屏蔽已结束预约和已预约的活动")
-                        
-                except (KeyboardInterrupt, EOFError):
-                    pass
-                
-                input("\n按回车键返回主菜单...")
-
-            elif selected_index == 1:  # 查看指定日期活动
-                selected_date = InteractiveMenu.show_date_menu(reservation_data)
-                if selected_date:
-                    print("\n" + "="*60)
-                    print(f"查看 {selected_date} 活动信息")
-                    print("="*60)
-                    reservation_data.display_activities_for_date(selected_date)
-                    input("\n按回车键返回主菜单...")
-            elif selected_index == 4:  # 开始预约抢票
+            elif selected_index == 0:  # 开抢活动参与资格
                 # 选择日期
                 selected_date = InteractiveMenu.show_date_menu(reservation_data)
                 if not selected_date:
@@ -278,7 +133,212 @@ def main():
                     input("\n按任意键返回主菜单...")
                 else:
                     input("\n预约结束，按回车键返回主菜单...")
-            elif selected_index == 5:  # 设置程序校时
+            elif selected_index == 1:  # 开抢商品购买资格
+                if not goods_reservation_data:
+                    Logger.error("商品数据未加载，无法进行商品抢票")
+                    input("\n按回车键返回主菜单...")
+                    continue
+                
+                # 选择日期
+                selected_date = InteractiveMenu.show_date_menu(goods_reservation_data)
+                if not selected_date:
+                    continue
+                
+                # 选择商品
+                selected_activity_id = InteractiveMenu.show_activity_menu(goods_reservation_data, selected_date)
+                if not selected_activity_id:
+                    continue
+                
+                # 选择预约模式
+                reservation_mode = InteractiveMenu.show_reservation_mode_menu()
+                if not reservation_mode:
+                    continue
+                
+                # 显示预约确认信息
+                activity_title = goods_reservation_data.activity_mapping[selected_activity_id][0]
+                mode_text = "准时开抢" if reservation_mode == "scheduled" else "直接开抢"
+                
+                # 使用 input 进行确认（支持直接回车）
+                try:
+                    print(f"\n商品：{activity_title}")
+                    print(f"模式：{mode_text}")
+                    confirm_input = input("确认开始商品抢票？(Y/n): ").strip().lower()
+                    
+                    if confirm_input == 'n':
+                        Logger.info("已取消商品抢票")
+                        continue
+                except (KeyboardInterrupt, EOFError):
+                    continue
+                
+                # 开始商品抢票
+                print("\n" + "="*60)
+                Logger.info(f"当前商品：{activity_title}")
+                Logger.info(f"当前模式：{mode_text}")
+                Logger.info("按 Ctrl+C 可以中断抢票\n")
+                
+                bot = ReservationBot(api_client, goods_reservation_data)
+                result = bot.wait_and_reserve(selected_activity_id, selected_date, reservation_mode)
+                
+                # 检查是否是 412 错误
+                if result and result.get("code") == 412:
+                    input("\n按任意键返回主菜单...")
+                else:
+                    input("\n商品抢票结束，按回车键返回主菜单...")
+            elif selected_index == 2:  # 查看所有预约活动
+                print("\n" + "="*60)
+                print("查看所有预约活动")
+                print("="*60)
+                reservation_data.display_ticket_info()
+                reservation_data.display_activities()
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 4:  # 查看我的票种
+                print("\n" + "="*60)
+                print("查看我的票种")
+                print("="*60)
+                reservation_data.display_ticket_info()
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 5:  # 查看我的预约
+                print("\n" + "="*60)
+                print("查看我的预约")
+                print("="*60)
+                try:
+                    my_reservations = api_client.get_my_reservations()
+                    if my_reservations:
+                        ReservationData.display_my_reservations(my_reservations)
+                    else:
+                        Logger.error("获取预约信息失败")
+                except Exception as e:
+                    Logger.error(f"获取预约信息时出错: {e}")
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 7:  # 设置开抢前延迟
+                try:
+                    current_delay = config.get('pre_delay', {}).get('start_delay_ms', 0)
+                    print(f"\n当前延时设置: {current_delay} 毫秒")
+                    print("说明: 本设置影响开票前的动作，正数为延迟（如 100 表示开票后 100ms 开抢），负数为提前（如 -100 表示提前 100ms 开抢）\n")
+                    
+                    delay_input = input(f"请输入新的延时时间（毫秒）: ").strip()
+                    
+                    if delay_input == "":
+                        Logger.info("未修改延时设置")
+                    else:
+                        new_delay = int(delay_input)
+                        config['pre_delay']['start_delay_ms'] = new_delay
+                        ConfigManager.save_config(config)
+                        if new_delay >= 0:
+                            Logger.info(f"延时设置已更新为: {new_delay} 毫秒（开票后延迟）")
+                        else:
+                            Logger.info(f"延时设置已更新为: {new_delay} 毫秒（开票前提前 {abs(new_delay)} 毫秒）")
+                            
+                except ValueError:
+                    Logger.warning("请输入有效的数字")
+                except (KeyboardInterrupt, EOFError):
+                    pass
+                
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 8:  # 设置开抢中延迟
+                try:
+                    current_delay = config.get('loop_delay', {}).get('loop_delay_ms', 50)
+                    print(f"\n当前开抢中延迟设置: {current_delay} 毫秒")
+                    print("说明: 本设置影响开抢过程中每次请求之间的延迟时间，设置为0表示不进行延迟，只允许非负数\n")
+                    
+                    delay_input = input(f"请输入新的开抢中延迟时间（毫秒，>=0）: ").strip()
+                    
+                    if delay_input == "":
+                        Logger.info("未修改开抢中延迟设置")
+                    else:
+                        new_delay = int(delay_input)
+                        if new_delay < 0:
+                            Logger.warning("开抢中延迟不能为负数，请输入大于等于0的数值")
+                        else:
+                            if 'loop_delay' not in config:
+                                config['loop_delay'] = {}
+                            config['loop_delay']['loop_delay_ms'] = new_delay
+                            ConfigManager.save_config(config)
+                            if new_delay == 0:
+                                Logger.info(f"开抢中延迟已设置为: {new_delay} 毫秒（无延迟）")
+                            else:
+                                Logger.info(f"开抢中延迟已设置为: {new_delay} 毫秒")
+                            
+                except ValueError:
+                    Logger.warning("请输入有效的数字")
+                except (KeyboardInterrupt, EOFError):
+                    pass
+                
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 9:  # 设置并发线程数
+                try:
+                    current_threads = config.get('thread_count', 1)
+                    print(f"\n当前并发线程数设置: {current_threads} 线程")
+                    print("多线程会并发发送预约请求，可能提高成功率，但也可能触发风控")
+                    print("不建议修改本参数，速度过快可能导致您被 412 临时限流")
+                    
+                    thread_input = input(f"请输入新的并发线程数（1-10）: ").strip()
+                    
+                    if thread_input == "":
+                        Logger.info("未修改线程数设置")
+                    else:
+                        new_threads = int(thread_input)
+                        if new_threads < 1:
+                            Logger.warning("线程数不能小于1")
+                        elif new_threads > 10:
+                            Logger.warning("线程数不建议超过10，可能触发风控")
+                            # 仍然允许设置，但给出警告
+                            config['thread_count'] = new_threads
+                            ConfigManager.save_config(config)
+                            Logger.info(f"线程数已设置为: {new_threads}（请注意风控风险）")
+                        else:
+                            config['thread_count'] = new_threads
+                            ConfigManager.save_config(config)
+                            if new_threads == 1:
+                                Logger.info(f"线程数已设置为: {new_threads}（单线程模式）")
+                            else:
+                                Logger.info(f"线程数已设置为: {new_threads}（多线程模式）")
+                            
+                except ValueError:
+                    Logger.warning("请输入有效的数字")
+                except (KeyboardInterrupt, EOFError):
+                    pass
+                
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 10:  # 设置屏蔽已结束活动
+                try:
+                    current_hide = config.get('activity_filter', {}).get('hide_ended_reservations', False)
+                    status_text = "已启用" if current_hide else "已禁用"
+                    print(f"\n当前设置: 屏蔽已结束预约活动 - {status_text}")
+                    print("说明: 启用后将为您隐藏不可预约的活动（含已预约成功的活动）")
+                    
+                    filter_options = [
+                        "禁用屏蔽 - 显示所有活动",
+                        "启用屏蔽 - 隐藏已结束预约、已预约的活动"
+                    ]
+                    
+                    current_option = 1 if current_hide else 0
+                    filter_selected = InteractiveMenu.show_menu("活动过滤设置", filter_options, current_option)
+                    
+                    if filter_selected == -1:
+                        pass  # 用户取消
+                    elif filter_selected == 0:
+                        config['activity_filter']['hide_ended_reservations'] = False
+                        ConfigManager.save_config(config)
+                        Logger.info("已禁用活动过滤，将显示所有活动")
+                    elif filter_selected == 1:
+                        config['activity_filter']['hide_ended_reservations'] = True
+                        ConfigManager.save_config(config)
+                        Logger.info("已启用活动过滤，将屏蔽已结束预约和已预约的活动")
+                        
+                except (KeyboardInterrupt, EOFError):
+                    pass
+                
+                input("\n按回车键返回主菜单...")
+            elif selected_index == 3:  # 查看指定日期活动
+                selected_date = InteractiveMenu.show_date_menu(reservation_data)
+                if selected_date:
+                    print("\n" + "="*60)
+                    print(f"查看 {selected_date} 活动信息")
+                    print("="*60)
+                    reservation_data.display_activities_for_date(selected_date)
+                    input("\n按回车键返回主菜单...")
+            elif selected_index == 6:  # 设置程序校时
                 time_options = [
                     "使用本地时间",
                     "使用 Aliyun NTP 时间"
