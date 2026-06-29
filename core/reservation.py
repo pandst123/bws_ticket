@@ -442,6 +442,11 @@ class ReservationBot:
                 delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
                 target_time = reserve_time + (delay_ms / 1000.0)  # 目标开抢时间
                 
+                # 时间抖动：提前 10-30ms 随机时间，避免请求同时到达
+                import random
+                jitter_ms = random.uniform(10, 30)
+                target_time -= jitter_ms / 1000.0
+                
                 # 等待到达目标开抢时间
                 if current_time < target_time:
                     remaining_seconds = target_time - current_time
