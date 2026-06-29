@@ -6,7 +6,7 @@ from core.api import BilibiliAPI
 from login.qrcode import QRCodeLogin
 from ui.menu import InteractiveMenu
 
-VERSION = "1.10.0"
+VERSION = "1.10.2"
 
 
 class UserInterface:
