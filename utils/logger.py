@@ -1,6 +1,8 @@
 """日志管理模块"""
+import json
 import logging
 import datetime
+import os
 from logging.handlers import RotatingFileHandler
 from rich.console import Console
 from rich.text import Text
@@ -49,6 +51,52 @@ class Logger:
     """日志管理器"""
     
     _logger = None
+    _cookie_cache_file = "cookie_cache.json"
+    _include_uid = False
+    _uid = None
+
+    @classmethod
+    def _get_current_uid(cls) -> str:
+        """读取当前账号 UID，避免在 logger 中导入 CookieCache 造成循环依赖。"""
+        try:
+            if cls._uid:
+                return str(cls._uid)
+
+            if not os.path.exists(cls._cookie_cache_file):
+                return "未知"
+
+            with open(cls._cookie_cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+
+            current_uid = cache_data.get('current_uid')
+            accounts = cache_data.get('accounts', {})
+            if current_uid in accounts:
+                return str(current_uid)
+            if current_uid:
+                return str(current_uid)
+            if accounts:
+                return str(next(iter(accounts)))
+            return "未知"
+        except Exception:
+            return "未知"
+
+    @classmethod
+    def enable_uid(cls, uid: str = None) -> None:
+        """后续日志统一带上当前账号 UID。"""
+        cls._include_uid = True
+        cls._uid = uid
+
+    @classmethod
+    def disable_uid(cls) -> None:
+        """关闭日志 UID 前缀。"""
+        cls._include_uid = False
+        cls._uid = None
+
+    @classmethod
+    def _format_message(cls, message: str) -> str:
+        if not cls._include_uid:
+            return message
+        return f"[UID {cls._get_current_uid()}] {message}"
     
     @classmethod
     def setup_logger(cls) -> logging.Logger:
@@ -91,21 +139,21 @@ class Logger:
         """输出信息级别日志"""
         if cls._logger is None:
             cls.setup_logger()
-        cls._logger.info(message)
+        cls._logger.info(cls._format_message(message))
     
     @classmethod
     def error(cls, message: str) -> None:
         """输出错误级别日志"""
         if cls._logger is None:
             cls.setup_logger()
-        cls._logger.error(message)
+        cls._logger.error(cls._format_message(message))
     
     @classmethod
     def warning(cls, message: str) -> None:
         """输出警告级别日志"""
         if cls._logger is None:
             cls.setup_logger()
-        cls._logger.warning(message)
+        cls._logger.warning(cls._format_message(message))
     
     @classmethod
     def success(cls, message: str) -> None:
@@ -113,16 +161,17 @@ class Logger:
         if cls._logger is None:
             cls.setup_logger()
         # 使用自定义的控制台输出
+        formatted_message = cls._format_message(message)
         text = Text()
         text.append(" ✓ ", style="bold green on black")
         text.append(" ", style="dim")
-        text.append(message, style="bold green")
+        text.append(formatted_message, style="bold green")
         console.print(text)
         # 同时写入文件
-        cls.log_to_file_only(f"SUCCESS - {message}")
+        cls.log_to_file_only(f"SUCCESS - {formatted_message}", include_uid=False)
     
     @classmethod
-    def log_to_file_only(cls, message: str, level: str = 'INFO') -> None:
+    def log_to_file_only(cls, message: str, level: str = 'INFO', include_uid: bool = True) -> None:
         """仅写入文件的日志，不在控制台显示"""
         if cls._logger is None:
             cls.setup_logger()
@@ -146,6 +195,9 @@ class Logger:
             )
             file_handler.setFormatter(file_formatter)
             file_only_logger.addHandler(file_handler)
+
+        if include_uid:
+            message = cls._format_message(message)
         
         if level.upper() == 'ERROR':
             file_only_logger.error(message)

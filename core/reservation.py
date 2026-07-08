@@ -1,7 +1,6 @@
 """预约业务模块"""
 import datetime
 import time
-import ntplib
 import threading
 from typing import Dict, List, Optional, Tuple, Set
 from rich.console import Console
@@ -377,100 +376,202 @@ class ReservationBot:
             return self._start_reservation_loop(ticket_number, activity_id, activity_title)
         else:
             Logger.info("当前为准时开抢模式，等待预约时间...")
-            return self._wait_for_reservation_time(ticket_number, activity_id, activity_title, reserve_time)
+            return self._wait_for_reservation_time(ticket_number, activity_id, activity_title, reserve_time, date)
     
-    def _wait_for_reservation_time(self, ticket_number: str, activity_id: int, activity_title: str, reserve_time: int) -> Optional[Dict]:
+    def _wait_for_reservation_time(
+        self,
+        ticket_number: str,
+        activity_id: int,
+        activity_title: str,
+        reserve_time: int,
+        date: str
+    ) -> Optional[Dict]:
         """等待预约时间到达
         
         Returns:
             预约结果字典，失败时返回 None
         """
         last_status_time = 0
-        auto_sync_done = False
+        completed_auto_sync_checkpoints = set()
+        prewarm_done = False
+        refresh_prewarm_done = False
+        entered_silent_countdown = False
+        silent_countdown_seconds = 5.0
+        final_spin_seconds = 0.02
+        prepared_request = self.api_client.prepare_reservation_request(ticket_number, activity_id)
+        time_config = self.config.get('time_calibration', {})
+        prewarm_config = self.config.get('request_prewarm', {})
+        if not isinstance(time_config, dict):
+            time_config = {}
+        if not isinstance(prewarm_config, dict):
+            prewarm_config = {}
+        auto_sync_before = float(time_config.get('auto_sync_before_seconds', 300))
+        checkpoint_values = time_config.get('auto_sync_checkpoints_seconds')
+        if isinstance(checkpoint_values, list) and checkpoint_values:
+            auto_sync_checkpoints = []
+            for checkpoint in checkpoint_values:
+                if isinstance(checkpoint, (int, float)) and checkpoint > silent_countdown_seconds:
+                    auto_sync_checkpoints.append(float(checkpoint))
+            auto_sync_checkpoints = sorted(set(auto_sync_checkpoints), reverse=True)
+        else:
+            auto_sync_checkpoints = [auto_sync_before]
+        force_ntp_threshold = float(time_config.get('force_ntp_threshold_seconds', 0.7))
+        prewarm_enabled = bool(prewarm_config.get('enabled', True))
+        prewarm_before = float(prewarm_config.get('before_seconds', 30))
+        refresh_prewarm_before = float(prewarm_config.get('refresh_before_seconds', 5))
+        prewarm_timeout = float(prewarm_config.get('timeout_seconds', 1.0))
+        prewarm_min_margin = float(prewarm_config.get('min_margin_seconds', 2.0))
+        delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
+        target_time = reserve_time + (delay_ms / 1000.0)
+
+        if delay_ms < 0:
+            Logger.warning(f"当前设置为提前 {-delay_ms} 毫秒开抢，程序会按该配置执行")
+
+        def format_checkpoint(checkpoint_seconds: float) -> str:
+            """格式化自动校时检查点。"""
+            if checkpoint_seconds >= 60 and checkpoint_seconds % 60 == 0:
+                return f"{int(checkpoint_seconds / 60)} 分钟"
+            return f"{checkpoint_seconds:g} 秒"
         
         try:
             while True:
-                current_time = int(TimeUtils.get_current_time())
+                current_time = TimeUtils.get_current_time()
+                remaining_to_target = target_time - current_time
                 
-                # 开抢前5分钟自动校时
-                if not auto_sync_done and current_time >= reserve_time - 300:  # 5分钟 = 300秒
-                    auto_sync_done = True
-                    Logger.info("开抢前 5 分钟，正在进行自动 NTP 校时...")
-                    
-                    # 记录校时前的时间（如果已启用 NTP 则使用当前 NTP 时间，否则使用本机时间）
-                    time_before = TimeUtils.get_current_time()
-                    local_time_before = time.time()  # 始终记录本机时间用于显示真实的本机与NTP差异
-                    
-                    # 执行NTP校时
-                    try:
-                        ntp_client = ntplib.NTPClient()
-                        response = ntp_client.request('ntp.aliyun.com', version=3)
-                        ntp_time = response.tx_time
-                        
-                        # 计算本机时间与NTP服务器的真实时间差（用于显示）
-                        real_time_diff = ntp_time - local_time_before
-                        
-                        # 计算新的NTP偏移（基于本机时间）
-                        new_ntp_offset = ntp_time - local_time_before
-                        
-                        # 显示本机时间与NTP服务器的真实时间差
+                due_checkpoints = [
+                    checkpoint
+                    for checkpoint in auto_sync_checkpoints
+                    if (
+                        checkpoint not in completed_auto_sync_checkpoints
+                        and remaining_to_target <= checkpoint
+                    )
+                ]
+
+                # 多阶段自动校时，但最后静默倒计时阶段不再发起 NTP 请求。
+                if due_checkpoints and remaining_to_target > silent_countdown_seconds:
+                    checkpoint = min(due_checkpoints)
+                    for due_checkpoint in due_checkpoints:
+                        completed_auto_sync_checkpoints.add(due_checkpoint)
+                    Logger.info(f"开抢前 {format_checkpoint(checkpoint)}，正在进行自动 NTP 校时...")
+
+                    use_ntp_before = TimeUtils._use_ntp
+                    result = TimeUtils.calibrate(apply_offset=use_ntp_before)
+                    if result.success:
+                        real_time_diff = result.offset_seconds
                         if abs(real_time_diff) < 1:
-                            Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (时间同步良好)")
+                            Logger.info(
+                                f"NTP 校时完成，本机时间与NTP服务器时间差："
+                                f"{real_time_diff:.3f}秒，"
+                                f"采样: {result.sample_count}次，"
+                                f"偏移波动: {result.offset_spread_ms:.1f}ms "
+                                "(时间同步良好)"
+                            )
                         else:
-                            Logger.info(f"NTP 校时完成，本机时间与NTP服务器时间差：{real_time_diff:.3f}秒 (建议检查系统时间)")
-                        
-                        # 如果用户未开启NTP模式，根据时间差决定是否临时应用校时
-                        if not TimeUtils._use_ntp:
-                            if abs(real_time_diff) > 0.7:
-                                TimeUtils._ntp_offset = new_ntp_offset
-                                TimeUtils._use_ntp = True
-                                Logger.info(f"本机时间偏差较大({real_time_diff:.3f}秒)，已临时启用 NTP 校时模式以确保抢票时间准确")
+                            Logger.info(
+                                f"NTP 校时完成，本机时间与NTP服务器时间差："
+                                f"{real_time_diff:.3f}秒，"
+                                f"采样: {result.sample_count}次，"
+                                f"偏移波动: {result.offset_spread_ms:.1f}ms "
+                                "(建议检查系统时间)"
+                            )
+                        if result.stability_warning:
+                            Logger.warning(f"NTP 校时稳定性提示: {result.stability_warning}")
+
+                        if not use_ntp_before:
+                            if abs(real_time_diff) > force_ntp_threshold:
+                                TimeUtils.apply_calibration(result)
+                                Logger.info(
+                                    f"本机时间偏差较大({real_time_diff:.3f}秒)，"
+                                    "已临时启用 NTP 校时模式以确保抢票时间准确"
+                                )
                             else:
                                 Logger.info(f"本机时间偏差较小({real_time_diff:.3f}秒)，继续使用本机时间")
                         else:
-                            # 更新现有的NTP偏移
-                            old_offset = TimeUtils._ntp_offset
-                            TimeUtils._ntp_offset = new_ntp_offset
-                            offset_change = new_ntp_offset - old_offset
-                            Logger.info(f"已更新 NTP 时间偏移 (偏移变化: {offset_change:.3f}秒)")
-                            
-                    except Exception as e:
-                        Logger.warning(f"自动 NTP 校时失败: {e}，将使用当前时间模式")
-                
-                # 计算开票前延迟设置（支持负数提前抢票）
-                delay_ms = self.config.get('pre_delay', {}).get('start_delay_ms', 0)
-                target_time = reserve_time + (delay_ms / 1000.0)  # 目标开抢时间
-                
-                # 时间抖动：提前 10-30ms 随机时间，避免请求同时到达
-                import random
-                jitter_ms = random.uniform(10, 30)
-                target_time -= jitter_ms / 1000.0
+                            Logger.info(
+                                f"已更新 NTP 时间偏移，服务器: {result.server}，"
+                                f"往返耗时: {result.round_trip_ms:.1f}ms，"
+                                f"采样: {result.sample_count}次，"
+                                f"偏移波动: {result.offset_spread_ms:.1f}ms"
+                            )
+                    else:
+                        Logger.warning(f"自动 NTP 校时失败: {result.error}，将使用当前时间模式")
+
+                    current_time = TimeUtils.get_current_time()
+                    remaining_to_target = target_time - current_time
+
+                if prewarm_enabled and remaining_to_target > prewarm_min_margin:
+                    if not prewarm_done and remaining_to_target <= prewarm_before:
+                        prewarm_done = True
+                        success = self.api_client.prewarm_reservation_info(date, timeout=prewarm_timeout)
+                        if success:
+                            Logger.info("已完成安全接口预热（仅 GET 查询接口，未发送预约请求）")
+                        else:
+                            Logger.warning("安全接口预热失败，将继续按原计划等待开抢")
+                    elif (
+                        prewarm_done
+                        and not refresh_prewarm_done
+                        and remaining_to_target <= refresh_prewarm_before
+                    ):
+                        refresh_prewarm_done = True
+                        success = self.api_client.prewarm_reservation_info(date, timeout=prewarm_timeout)
+                        Logger.log_to_file_only(
+                            f"临近开抢安全预热{'成功' if success else '失败'}（仅 GET 查询接口）"
+                        )
                 
                 # 等待到达目标开抢时间
-                if current_time < target_time:
-                    remaining_seconds = target_time - current_time
-                    
-                    # 开票前5秒停止输出倒计时，并显示待抢状态提示
-                    if remaining_seconds <= 5:
-                        if last_status_time == 0 or current_time > last_status_time + 1:  # 只打印一次或每秒更新一次
-                            last_status_time = current_time
-                            Logger.info("即将开始抢票，进入待抢状态，不再输出倒计时")
-                    elif (current_time > last_status_time + 3):
+                if remaining_to_target > 0:
+                    remaining_seconds = remaining_to_target
+
+                    # 最后几秒进入静默高精度倒计时，不再输出倒计时或状态日志。
+                    if remaining_seconds <= silent_countdown_seconds:
+                        entered_silent_countdown = True
+                    elif current_time > last_status_time + 3:
                         last_status_time = current_time
                         reserve_time_str = TimeUtils.timestamp_to_datetime(reserve_time)
                         Logger.info(f'等待开票，距离开票时间 {remaining_seconds:.1f} 秒（{reserve_time_str}）')
-                    time.sleep(0.1)
+
+                    if entered_silent_countdown and remaining_seconds <= final_spin_seconds:
+                        target_perf = time.perf_counter() + remaining_seconds
+                        while time.perf_counter() < target_perf:
+                            pass
+                    elif entered_silent_countdown:
+                        time.sleep(min(0.005, max(remaining_seconds / 2, 0.001)))
+                    else:
+                        time.sleep(min(0.2, max(remaining_seconds - silent_countdown_seconds, 0.05)))
                     continue
                 
-                # 到达目标时间，开始抢票
+                # 到达目标时间，先发送首个请求，再输出日志，避免临界点日志 IO 阻塞首包。
+                first_result = self.api_client.send_prepared_reservation(prepared_request)
+
                 if delay_ms > 0:
                     Logger.info(f"开票时间已到，延迟 {delay_ms} 毫秒后开始抢票...")
                 elif delay_ms < 0:
                     Logger.info(f"提前 {-delay_ms} 毫秒开始抢票...")
                 else:
                     Logger.info("开票时间已到，开始抢票...")
-                
-                # 开始抢票
+                first_code = first_result.get("code")
+
+                if first_code == 0:
+                    Logger.info("\033[32m首个请求预约成功！\033[0m")
+                    return first_result
+                if first_code == 412:
+                    Logger.warning(first_result.get("message", "[412] IP 或账号被限流，建议更换 IP 再试"))
+                    return first_result
+                if first_code == 75574:
+                    Logger.error("[75574] 预约已被抢空")
+                    return first_result
+                if first_code == 76674:
+                    Logger.error("[76674] 预约已达上限")
+                    return first_result
+                if first_code == 75637:
+                    Logger.info("[75637] 首个请求返回尚未开放，继续重试")
+                elif first_code in (-702, 429, 76650, 76651):
+                    Logger.warning(f"首个请求返回 {first_code}，继续进入重试循环")
+                elif first_code == -1:
+                    Logger.error("首个请求网络错误，继续进入重试循环")
+                else:
+                    Logger.warning(f"首个请求返回未知状态，继续进入重试循环：{first_result}")
+
                 return self._start_reservation_loop(ticket_number, activity_id, activity_title)
         except KeyboardInterrupt:
             Logger.info("用户中断等待")
